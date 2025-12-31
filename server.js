@@ -74,9 +74,11 @@ app.post("/create-payment", async (req, res) => {
         .split("T")[0],
     };
 
-    if (billingType === "CREDIT_CARD") {
-      paymentPayload.installmentCount = installments;
-    }
+   if (billingType === "CREDIT_CARD") {
+  paymentPayload.installmentCount = 1;
+  paymentPayload.installmentValue = Number(value.toFixed(2));
+}
+
 
     const paymentResponse = await asaas.post(
       "/payments",
