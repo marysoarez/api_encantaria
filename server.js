@@ -15,6 +15,10 @@ app.use(bodyParser.json());
 const ASAAS_API_URL = "https://api-sandbox.asaas.com/v3";
 
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
+console.log(
+  "ASAAS_API_KEY:",
+  process.env.ASAAS_API_KEY?.startsWith("aact_") ? "OK" : "INVALID"
+);
 
 const asaas = axios.create({
   baseURL: ASAAS_API_URL,
