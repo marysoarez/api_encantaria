@@ -1,4 +1,6 @@
 // 🚀 Backend completo Node.js + Express + Asaas (SEM Firebase)
+import dotenv from "dotenv";
+dotenv.config();
 
 import express from "express";
 import cors from "cors";
