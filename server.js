@@ -13,8 +13,8 @@ app.use(bodyParser.json());
 // 🔐 CONFIG
 // -----------------------------
 const ASAAS_API_URL = "https://api-sandbox.asaas.com/v3";
-const ASAAS_API_KEY =
-  "$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OmMxMzFlN2YwLWJkYjgtNDdmNC1iMGZkLTNhMTY0Yjc1Nzk3ZDo6JGFhY2hfODU3MzNlN2MtMDVlZC00Yjk4LTgyNzUtYzliMzViMzE1Zjg5"; // ⚠️ use .env em produção
+
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
 
 const asaas = axios.create({
   baseURL: ASAAS_API_URL,
@@ -194,6 +194,9 @@ app.post("/confirm-payment", async (req, res) => {
 // -----------------------------
 // ▶ START SERVER
 // -----------------------------
-app.listen(3333, () => {
-  console.log("🚀 Server running at http://localhost:3333");
+const PORT = process.env.PORT || 3333;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
+
