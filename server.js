@@ -190,6 +190,12 @@ app.post("/confirm-payment", async (req, res) => {
     });
   }
 });
+// -----------------------------
+// ❤️ HEALTH CHECK (Render)
+// -----------------------------
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 
 // -----------------------------
 // ▶ START SERVER
