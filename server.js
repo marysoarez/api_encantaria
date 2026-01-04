@@ -152,6 +152,8 @@ app.post("/create-payment", async (req, res) => {
 
     res.status(400).json({ error: "Tipo de pagamento inválido" });
   } catch (err) {
+      logAxiosError(err, "CREATE PAYMENT");
+
     console.error("❌ ERRO CREATE-PAYMENT:", err.response?.data || err);
     res.status(400).json({
       error: err.response?.data || err.toString(),
