@@ -1,4 +1,4 @@
-// 🚀 Backend completo Node.js + Express + Asaas (SEM Firebase)
+// 🚀 Backend completo Node.js + Express + Asaas + WhatsApp Business
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -11,16 +11,11 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// -----------------------------
-// 🔐 CONFIG
-// -----------------------------
+/* ======================================================
+ 🔐 CONFIG ASAAS
+====================================================== */
 const ASAAS_API_URL = "https://api-sandbox.asaas.com/v3";
-
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY;
-console.log(
-  "ASAAS_API_KEY:",
-  process.env.ASAAS_API_KEY?.startsWith("aact_") ? "OK" : "INVALID"
-);
 
 const asaas = axios.create({
   baseURL: ASAAS_API_URL,
@@ -30,9 +25,83 @@ const asaas = axios.create({
   },
 });
 
-// -----------------------------
-// 🧑‍💼 CRIAR CUSTOMER
-// -----------------------------
+/* ======================================================
+ 📲 CONFIG WHATSAPP
+====================================================== */
+const whatsapp = axios.create({
+  baseURL: "https://graph.facebook.com/v22.0",
+  headers: {
+    Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+});
+
+
+/* ======================================================
+ 📲 FUNÇÃO WHATSAPP (ROBUSTA)
+====================================================== */
+async function sendWhatsAppMessage({ phone, message }) {
+  try {
+    // fallback de segurança (DEV)
+    let rawPhone = phone ?? "11999999999";
+
+    // normaliza para string e remove tudo que não é número
+    let normalizedPhone = String(rawPhone).replace(/\D/g, "");
+
+    // força DDI 55
+    if (!normalizedPhone.startsWith("55")) {
+      normalizedPhone = `55${normalizedPhone}`;
+    }
+
+    // valida tamanho mínimo (55 + DDD + número)
+    if (normalizedPhone.length < 12) {
+      console.warn(
+        "⚠️ Telefone inválido, WhatsApp ignorado:",
+        normalizedPhone
+      );
+      return;
+    }
+
+    await whatsapp.post(
+      `/${process.env.WHATSAPP_PHONE_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: normalizedPhone,
+        type: "text",
+        text: { body: message },
+      }
+    );
+
+    console.log("📲 WhatsApp enviado para", normalizedPhone);
+  } catch (error) {
+    // nunca derruba pagamento
+    console.error(
+      "❌ ERRO WHATSAPP:",
+      error.response?.data || error.message
+    );
+  }
+}
+
+/* ======================================================
+ 📝 MENSAGEM CONFIRMAÇÃO
+====================================================== */
+function buildConfirmationMessage({ name, service, value }) {
+  return `
+✅ *Pagamento confirmado!*
+
+Olá, ${name} 😊  
+Seu pagamento foi confirmado com sucesso.
+
+🛎 Serviço: ${service}
+💰 Valor: R$ ${value}
+
+Qualquer dúvida é só responder essa mensagem 💬
+`;
+}
+
+/* ======================================================
+ 🧑‍💼 CRIAR CUSTOMER
+====================================================== */
 async function createCustomer({ name, email, cpfCnpj }) {
   const response = await asaas.post("/customers", {
     name,
@@ -40,74 +109,70 @@ async function createCustomer({ name, email, cpfCnpj }) {
     cpfCnpj,
   });
 
-  return response.data.id; // cus_xxxxx
+  return response.data.id;
 }
 
-// -----------------------------
-// 💰 CRIAR PAGAMENTO
-// -----------------------------
+/* ======================================================
+ 💰 CRIAR PAGAMENTO
+====================================================== */
 app.post("/create-payment", async (req, res) => {
   try {
     const {
-      billingType, // PIX | CREDIT_CARD
-      customerData, // { name, email, cpfCnpj }
+      billingType,
+      customerData, // { name, email, cpfCnpj, phone }
       description,
       value,
-      installments = 1,
       creditCard,
       creditCardHolderInfo,
     } = req.body;
 
-    console.log("📥 RECEBIDO DO FLUTTER:", req.body);
+    const numericValue = Number(value);
+    if (isNaN(numericValue)) {
+      throw new Error("Valor inválido");
+    }
 
-    // ----------------------------------
-    // 1️⃣ Criar cliente no Asaas
-    // ----------------------------------
     const customerId = await createCustomer(customerData);
 
-    console.log("🧑‍💼 CUSTOMER ASAAS:", customerId);
-
-    // ----------------------------------
-    // 2️⃣ Criar cobrança
-    // ----------------------------------
     const paymentPayload = {
       billingType,
       customer: customerId,
       description,
-      value: Number(value.toFixed(2)),
+      value: Number(numericValue.toFixed(2)),
       dueDate: new Date(Date.now() + 86400000)
         .toISOString()
         .split("T")[0],
     };
 
-   if (billingType === "CREDIT_CARD") {
-  paymentPayload.installmentCount = 1;
-  paymentPayload.installmentValue = Number(value.toFixed(2));
-}
+    if (billingType === "CREDIT_CARD") {
+      paymentPayload.installmentCount = 1;
+      paymentPayload.installmentValue = Number(
+        numericValue.toFixed(2)
+      );
+    }
 
-
-    const paymentResponse = await asaas.post(
+    const { data: payment } = await asaas.post(
       "/payments",
       paymentPayload
     );
 
-    const payment = paymentResponse.data;
-
-    console.log("💳 PAGAMENTO CRIADO:", payment.id);
-
-    // ----------------------------------
-    // 3️⃣ PAGAR COM CARTÃO (2ª etapa)
-    // ----------------------------------
+    /* -----------------------------
+       💳 CARTÃO
+    ------------------------------ */
     if (billingType === "CREDIT_CARD") {
       const payResponse = await asaas.post(
         `/payments/${payment.id}/payWithCreditCard`,
-        {
-          creditCard,
-          creditCardHolderInfo,
-        }
+        { creditCard, creditCardHolderInfo }
       );
 
-      console.log("✅ CARTÃO PROCESSADO");
+      // WhatsApp NÃO bloqueia retorno
+      sendWhatsAppMessage({
+        phone: customerData?.phone,
+        message: buildConfirmationMessage({
+          name: customerData.name,
+          service: description,
+          value: numericValue.toFixed(2),
+        }),
+      });
 
       return res.json({
         success: true,
@@ -116,9 +181,9 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
-    // ----------------------------------
-    // 4️⃣ PIX
-    // ----------------------------------
+    /* -----------------------------
+       💠 PIX
+    ------------------------------ */
     if (billingType === "PIX") {
       return res.json({
         success: true,
@@ -131,50 +196,29 @@ app.post("/create-payment", async (req, res) => {
       });
     }
 
-    res.status(400).json({ error: "Tipo de pagamento inválido" });
+    res.status(400).json({ error: "Tipo inválido" });
   } catch (err) {
-    console.error("❌ ERRO CREATE-PAYMENT:", err.response?.data || err);
-    res.status(400).json({
-      error: err.response?.data || err.toString(),
-    });
+    console.error("❌ ERRO CREATE-PAYMENT:", err.message);
+    res.status(400).json({ error: err.message });
   }
 });
 
-app.get('/pix/:paymentId', async (req, res) => {
-  const { paymentId } = req.params;
-
-  try {
-    const response = await axios.get(
-      `${ASAAS_API_URL}/payments/${paymentId}/pixQrCode`,
-      {
-        headers: {
-          access_token: ASAAS_API_KEY,
-        },
-      }
-    );
-
-    res.json(response.data);
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ error: 'Erro ao buscar QR Code PIX' });
-  }
-});
-
-
+/* ======================================================
+ 💠 CONFIRMAR PIX + WHATSAPP
+====================================================== */
 app.post("/confirm-payment", async (req, res) => {
   try {
     const { paymentId } = req.body;
 
     if (!paymentId) {
-      return res.status(400).json({
-        error: "paymentId é obrigatório",
-      });
+      return res
+        .status(400)
+        .json({ error: "paymentId obrigatório" });
     }
 
-    const response = await asaas.get(`/payments/${paymentId}`);
-    const payment = response.data;
-
-    console.log("🔎 STATUS ASAAS:", payment.status);
+    const { data: payment } = await asaas.get(
+      `/payments/${paymentId}`
+    );
 
     if (!["CONFIRMED", "RECEIVED"].includes(payment.status)) {
       return res.json({
@@ -183,32 +227,37 @@ app.post("/confirm-payment", async (req, res) => {
       });
     }
 
+    // WhatsApp após confirmação PIX (telefone fixo por enquanto)
+    sendWhatsAppMessage({
+      phone: "11999999999",
+      message: buildConfirmationMessage({
+        name: "Cliente",
+        service: payment.description,
+        value: payment.value,
+      }),
+    });
+
     res.json({
       status: "success",
       paymentStatus: payment.status,
-      description: payment.description,
-      value: payment.value,
     });
   } catch (err) {
-    console.error("❌ ERRO CONFIRM-PAYMENT:", err.response?.data || err);
-    res.status(500).json({
-      error: err.response?.data || err.toString(),
-    });
+    console.error("❌ ERRO CONFIRM-PAYMENT:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
-// -----------------------------
-// ❤️ HEALTH CHECK (Render)
-// -----------------------------
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+
+/* ======================================================
+ ❤️ HEALTH CHECK
+====================================================== */
+app.get("/health", (_, res) => {
+  res.json({ status: "ok" });
 });
 
-// -----------------------------
-// ▶ START SERVER
-// -----------------------------
-const PORT = process.env.PORT || 3333;
-
+/* ======================================================
+ ▶ START SERVER
+====================================================== */
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server rodando na porta ${PORT}`);
 });
-
