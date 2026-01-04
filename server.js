@@ -10,6 +10,25 @@ import axios from "axios";
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+function logAxiosError(error, label = "AXIOS ERROR") {
+  console.error(`\n❌❌❌ ${label} ❌❌❌`);
+
+  if (error.response) {
+    console.error("STATUS:", error.response.status);
+    console.error("HEADERS:", error.response.headers);
+    console.error(
+      "DATA:",
+      JSON.stringify(error.response.data, null, 2)
+    );
+  } else if (error.request) {
+    console.error("REQUEST FEITO MAS SEM RESPOSTA:", error.request);
+  } else {
+    console.error("ERRO INTERNO:", error.message);
+  }
+
+  console.error("STACK:", error.stack);
+  console.error("❌❌❌ FIM DO ERRO ❌❌❌\n");
+}
 
 // -----------------------------
 // 🔐 CONFIG
@@ -155,6 +174,8 @@ app.get('/pix/:paymentId', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
+      logAxiosError(err, "CREATE PAYMENT");
+
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: 'Erro ao buscar QR Code PIX' });
   }
