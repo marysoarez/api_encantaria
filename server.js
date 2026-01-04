@@ -185,6 +185,7 @@ app.get('/pix/:paymentId', async (req, res) => {
 app.post("/confirm-payment", async (req, res) => {
   try {
     const { paymentId } = req.body;
+  logAxiosError(err, "CREATE PAYMENT");
 
     if (!paymentId) {
       return res.status(400).json({
